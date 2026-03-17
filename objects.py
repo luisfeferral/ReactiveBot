@@ -1,12 +1,12 @@
 from enum import Enum, auto
 from dataclasses import dataclass
-from random import random
+from random import random, randint
 from math import sin, cos, pi, sqrt
+from abc import ABC, abstractmethod
+from typing import Self, Optional
+from adbcontroller import ControllableDeviceAsync
+import asyncio
 
-from ppadb.client_async import ClientAsync
-from ppadb.device_async import DeviceAsync
-import yaml
-from yaml.parser import ParserError
 @dataclass
 class Ellipse:
     center_x: int
@@ -31,49 +31,71 @@ class Ellipse:
         y = self.center_y + v * self.radius_y
 
         return int(x), int(y)
+    
+    def __str__(self) -> str:
+        return f"x: {self.center_x} ± {self.radius_x}; y: {self.center_y} ± {self.radius_y}"
 
-class TypeAction(Enum):
-    WAIT = auto()
-    TAP_ELLIPSE = auto()
-    TAP = auto()
-    PULSE = auto()
-    BUTTON = auto()
-    DRAG = auto()
 
-class Action:
-    # click, drag, wait, button, write/copy/paste?
-    type: TypeAction
-    args: tuple[str|int, ...]
-    # hasheable
-    def __init__(self, type:TypeAction, *args:str|int) -> None:
-        if type == TypeAction.WAIT: # ms
-            if len(args) != 1 and any(not isinstance(a,(int, float)) for a in args):
-                raise ValueError
-            # build the action method
+class Action(ABC):
+    @abstractmethod
+    def __str__(self) -> str: ...
+
+    @abstractmethod
+    async def act(self, device: ControllableDeviceAsync) -> None: ...
+
+    # hashable
+    def __hash__(self) -> int:
+        return hash(self.__str__())
+    def __eq__(self, other: Self) -> bool:
+        return self.__str__() == other.__str__()
+
+
+class WaitAction(Action):
+    time_ms: int
+    time_s: float
+    def __init__(self, time_ms: int) -> None:
+        self.time_ms = time_ms
+        self.time_s = time_ms / 1000
+    def __str__(self):
+        return f"[wait] {self.time_ms} ms"
+    async def act(self, _device: ControllableDeviceAsync) -> None:
+        await asyncio.sleep(self.time_s)
+
+
+class TapEllipseAction(Action):
+    ellipse: Ellipse
+    def __init__(self, ellipse_to_tap: Ellipse) -> None:
+        self.ellipse = ellipse_to_tap
+    def __str__(self):
+        return f"[tap-ellipse] {self.ellipse}"
+    async def act(self, device: ControllableDeviceAsync) -> None:
+        await device.send_tap(*self.ellipse.get_random_point(), randint(100, 150))
+
+
+class TapAction(Action):
+    position: tuple[int, int]
+    time_ms: int
+    def __init__(self, position_x:int, position_y:int, time_ms:int) -> None:
+        self.position = position_x, position_y
+        self.time_ms = time_ms
+    def __str__(self):
+        return f"[tap] pos: {self.position}; time: {self.time_ms} ms"
+    async def act(self, device: ControllableDeviceAsync) -> None:
+        await device.send_tap(*self.position, self.time_ms)
+
+class ButtonAction(Action):
+    key_code: int
+    key_alias: str
+    def __init__(self, key_code: int, key_alias:Optional[str]=None) -> None:
+        self.key_code = key_code
+        self.key_alias = str(key_code) if key_alias is None else key_alias
+    def __str__(self):
+        return f"[button] key_code: {self.key_code}"
+    def __repr__(self) -> str:
+        return f"[button] key: {self.key_alias}; key_code: {self.key_code}"
+    async def act(self, device: ControllableDeviceAsync) -> None:
+        await device.send_key(self.key_code)
         
-        elif type == TypeAction.TAP_ELLIPSE: # ellipse
-            if len(args) != 2 and any(not isinstance(a, Ellipse) for a in args):
-                raise ValueError
-            # build the action method
-            
-        elif type == TypeAction.TAP: # x, y
-            if len(args) != 2 and any(not isinstance(a, int) for a in args):
-                raise ValueError
-            # build the action method
-
-        elif type == TypeAction.PULSE: # x, y, ms
-            if len(args) != 3 and any(not isinstance(a, int) for a in args):
-                raise ValueError
-            # build the action method
-
-        elif type == TypeAction.BUTTON: # button
-            if len(args) != 1 and any(not isinstance(a, int) for a in args):
-                raise ValueError
-            # build the action method
-            
-            input swipe 1 1 2 2 100
-        
-
 
 class PreState:
     masks: list[png]
