@@ -1,4 +1,3 @@
-from enum import Enum, auto
 from dataclasses import dataclass
 from random import random, randint
 from math import sin, cos, pi, sqrt
@@ -6,6 +5,24 @@ from abc import ABC, abstractmethod
 from typing import Self, Optional
 from adbcontroller import ControllableDeviceAsync
 import asyncio
+import numpy as np
+from PIL import Image
+
+class Mask:
+    _rgb_array: np.ndarray
+    _filtered_array: np.ndarray
+    _dimensions: tuple[int, ...]
+    def __init__(self, img_source) -> None:
+        img = np.array(Image.open(img_source).convert("RGBA"))
+        self._rgb_array = img[:, :, :3]
+        self._dimensions = self._rgb_array.shape
+        self._filtered_array = img[:, :, 3] >= 128 # / 255
+    def mask_match(self, img: np.ndarray) -> bool:
+        img_rgb = img[:, :, :3]
+        if self._dimensions != img_rgb.shape:
+            return False
+        return bool(np.all(self._rgb_array[self._filtered_array] == img_rgb[self._filtered_array]))
+
 
 @dataclass
 class Ellipse:
@@ -115,14 +132,24 @@ class ButtonAction(Action):
 #         spontaneous_states = set(spontaneous_states_list)
 
 class State:
-    masks: Optional[list[str]]
+    alias: str
+    masks: Optional[list[Mask]]
     # the set[State] assigned to None is the set with the spontaneous states
     edges_by_action: dict[Optional[Action], set[Self]]
-    def __init__(self, masks) -> None:
+    def __init__(self, alias: str, masks: Optional[list[Mask]]) -> None:
+        self.alias = alias
         self.masks = masks
         self.edges_by_action = {}
+    def get_name(self):
+        return self.alias
+    def __repr__(self) -> str:
+        return f"[State] {self.alias}"
     def is_obvious_state(self) -> bool:
         return self.masks is None or len(self.masks) == 0
+    def can_be_in_this_state(self, screen_img: np.ndarray) -> bool:
+        if self.masks is None or len(self.masks) == 0:
+            return True
+        return any(m.mask_match(screen_img) for m in self.masks)
     def connect(self, action: Optional[Action], edges: set[Self]):
         self.edges_by_action[action] = edges
 
@@ -142,8 +169,9 @@ def load_graph(file: str) -> State:
             # no se usa set porque el orden es importante
             pass
         nodes[reference] = State(
-            masks
-        )
+            reference,
+            [Mask(m) for m in masks] if masks else None
+        ) # cuidado porque lo lógico sería que las rutas de las máscaras sean relativas a su archivo
 
     # 2. Conectar
     for reference, (_, actions) in states.items():
