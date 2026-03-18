@@ -4,5 +4,6 @@
 *.json
 *.png
 *.yaml
+test.py
 
 !DeviceTemplate/
