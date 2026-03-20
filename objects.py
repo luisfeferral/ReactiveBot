@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from random import random, randint
 from math import sin, cos, pi, sqrt
 from abc import ABC, abstractmethod
-from typing import Self, Optional
+from typing import Any, Optional
 from adbcontroller import ControllableDeviceAsync
 import asyncio
 import numpy as np
@@ -60,11 +62,40 @@ class Action(ABC):
     @abstractmethod
     async def act(self, device: ControllableDeviceAsync) -> None: ...
 
+    @abstractmethod
+    def get_weight(self) -> float: ...
+
+    def get_actions(self) -> list[Action]: 
+        return [self]
+
+    def __add__(self, other: Any) -> MacroAction:
+        if isinstance(other, int):
+            return self + WaitAction(other)
+        elif isinstance(other, Action):
+            return MacroAction(self.get_actions() + other.get_actions())
+        raise NotImplemented
     # hashable
     def __hash__(self) -> int:
         return hash(self.__str__())
-    def __eq__(self, other: Self) -> bool:
-        return self.__str__() == other.__str__()
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, Action):
+            return NotImplemented
+        return str(self) == str(other)
+
+
+class MacroAction(Action):
+    actions: list[Action]
+    def __init__(self, actions: list[Action]) -> None:
+        self.actions = actions
+    def get_weight(self) -> float:
+        return sum(a.get_weight() for a in self.actions)
+    def __str__(self):
+        return f"[macro]: ({' + '.join(str(a) for a in self.actions)})"
+    async def act(self, device: ControllableDeviceAsync) -> None:
+        for a in self.actions:
+            await a.act(device)
+    def get_actions(self) -> list[Action]:
+        return self.actions
 
 
 class WaitAction(Action):
@@ -73,6 +104,8 @@ class WaitAction(Action):
     def __init__(self, time_ms: int) -> None:
         self.time_ms = time_ms
         self.time_s = time_ms / 1000
+    def get_weight(self) -> float:
+        return self.time_s
     def __str__(self):
         return f"[wait] {self.time_ms} ms"
     async def act(self, _device: ControllableDeviceAsync) -> None:
@@ -81,8 +114,12 @@ class WaitAction(Action):
 
 class TapEllipseAction(Action):
     ellipse: Ellipse
-    def __init__(self, ellipse_to_tap: Ellipse) -> None:
+    weight: float
+    def __init__(self, ellipse_to_tap: Ellipse, weight:float=1) -> None:
         self.ellipse = ellipse_to_tap
+        self.weight = weight
+    def get_weight(self) -> float:
+        return self.weight
     def __str__(self):
         return f"[tap-ellipse] {self.ellipse}"
     async def act(self, device: ControllableDeviceAsync) -> None:
@@ -92,9 +129,13 @@ class TapEllipseAction(Action):
 class TapAction(Action):
     position: tuple[int, int]
     time_ms: int
-    def __init__(self, position_x:int, position_y:int, time_ms:int) -> None:
+    weight: float
+    def __init__(self, position_x:int, position_y:int, time_ms:int, weight:float=1) -> None:
         self.position = position_x, position_y
         self.time_ms = time_ms
+        self.weight = weight
+    def get_weight(self) -> float:
+        return self.weight
     def __str__(self):
         return f"[tap] pos: {self.position}; time: {self.time_ms} ms"
     async def act(self, device: ControllableDeviceAsync) -> None:
@@ -103,9 +144,13 @@ class TapAction(Action):
 class ButtonAction(Action):
     key_code: int
     key_alias: Optional[str]
-    def __init__(self, key_code: int, key_alias:Optional[str]=None) -> None:
+    weight: float
+    def __init__(self, key_code: int, key_alias:Optional[str]=None, weight:float=1) -> None:
         self.key_code = key_code
         self.key_alias = key_alias
+        self.weight = weight
+    def get_weight(self) -> float:
+        return self.weight
     def __str__(self):
         return f"[button] key_code: {self.key_code}"
     def __repr__(self) -> str:
@@ -135,7 +180,7 @@ class State:
     alias: str
     masks: Optional[list[Mask]]
     # the set[State] assigned to None is the set with the spontaneous states
-    edges_by_action: dict[Optional[Action], set[Self]]
+    edges_by_action: dict[Optional[Action], set[State]]
     def __init__(self, alias: str, masks: Optional[list[Mask]]) -> None:
         self.alias = alias
         self.masks = masks
@@ -150,18 +195,18 @@ class State:
         if self.masks is None or len(self.masks) == 0:
             return True
         return any(m.mask_match(screen_img) for m in self.masks)
-    def connect(self, action: Optional[Action], edges: set[Self]):
+    def connect(self, action: Optional[Action], edges: set[State]):
         self.edges_by_action[action] = edges
 
 states_builder = dict[str,
                     tuple[list[str],
                           dict[Optional[Action], list[str]]]]
 
-def load_graph(file: str) -> State:
+def load_graph(file: str) -> dict[Optional[str], State]:
     # load states from the file
     states:states_builder = {}
 
-    nodes:dict[str, State] = {}
+    nodes:dict[Optional[str], State] = {}
     # 1. Crear nodos
     for reference, (masks, _) in states.items():
         if len(masks) != len(set(masks)):
@@ -215,5 +260,21 @@ def load_graph(file: str) -> State:
                 for edge in edges:
                     if edge not in nodes_visited:
                         nodes_to_visit.add(edge)
+    nodes[None] = nodes[next(iter(states.keys()))] # Initial state
+    return nodes
 
-    return nodes[next(iter(states.keys()))]
+def complete_task(device: ControllableDeviceAsync, states_dict:dict[Optional[str],State], target: tuple[str, str], limits_loop: dict[tuple[str,str],int]):
+    # target = "edge_name1" -> "edge_name2"
+    # if the goal is reach the target a limited number of times, the goal_reach can be restricted in the limits
+    edges_traveled: dict[tuple[str,str], int] = {}
+
+    weight_spontaneous_actions = 5
+
+    initial_state = states_dict[None]
+    # Primero calculo una ruta a target y la intento seguir, los tap que tengan un weigth de 1s y los none de 5s
+    # Si estoy en la ruta la sigo, si la termino o me pierdo, recalculo, en cada paso, si se sobrepasa algún limite se sale del bucle
+
+    # Si está en un camino y una acción una acción lleva a cumplir un límite, evita esa acción, a no ser que sea el target
+
+    # Por ejemplo, si está limitado a hacer un especial (cuando haya más disponibles), pues ese trade de debería aceptarlo, pero tampoco haría falta que se bloquease, con que espere a que el otro lo cambie sería suficiente
+
