@@ -88,7 +88,7 @@ class MacroAction(Action):
     def __init__(self, actions: list[Action]) -> None:
         self.actions = actions
     def get_weight(self) -> float:
-        return sum(a.get_weight() for a in self.actions)
+        return sum(action.get_weight() for action in self.actions)
     def __str__(self):
         return f"[macro]: ({' + '.join(str(a) for a in self.actions)})"
     async def act(self, device: ControllableDeviceAsync) -> None:
@@ -263,6 +263,43 @@ def load_graph(file: str) -> dict[Optional[str], State]:
     nodes[None] = nodes[next(iter(states.keys()))] # Initial state
     return nodes
 
+def calculate_shortest_path(states_dict:dict[Optional[str],State], actual_state: str, target_state: str, weight_spontaneous_actions:float=5) -> list[str]:
+    # Uses Dijkstra for get the shorthest distance, but returns the path
+    
+    search_alias_by_state: dict[State, str] = {v: k for k, v in states_dict.items() if k is not None}
+
+    shortest: dict[str, tuple[float, Optional[str]]] = {}
+    explored: set[str] = set()
+
+    shortest[actual_state] = (0, None)
+
+    while target_state not in shortest:
+        estimated = None
+        for edge, (estimated_weight, _) in shortest.items():
+            if edge not in explored and (estimated is None or estimated_weight < estimated):
+                actual_node = edge
+                estimated = estimated_weight
+        if estimated is None:
+            raise ValueError("The target state is unreachable")
+
+        for action, edges in states_dict[actual_node].edges_by_action.items():
+            estimated += weight_spontaneous_actions if action is None else action.get_weight()
+            for edge in edges:
+                name_edge = search_alias_by_state[edge]
+                if name_edge not in shortest or shortest[name_edge][0] > estimated:
+                    shortest[name_edge] = (estimated, actual_node)
+            estimated -= weight_spontaneous_actions if action is None else action.get_weight()
+        explored.add(actual_state)
+    route = [actual_node, target_state]
+
+    while previous_node is not None:
+        actual_node = previous_node
+        route = [previous_node] + [route]
+        previous_node = shortest[actual_node][1]
+    return route
+
+        
+
 def complete_task(device: ControllableDeviceAsync, states_dict:dict[Optional[str],State], target: tuple[str, str], limits_loop: dict[tuple[str,str],int]):
     # target = "edge_name1" -> "edge_name2"
     # if the goal is reach the target a limited number of times, the goal_reach can be restricted in the limits
@@ -272,7 +309,8 @@ def complete_task(device: ControllableDeviceAsync, states_dict:dict[Optional[str
 
     initial_state = states_dict[None]
     # Primero calculo una ruta a target y la intento seguir, los tap que tengan un weigth de 1s y los none de 5s
-    # Si estoy en la ruta la sigo, si la termino o me pierdo, recalculo, en cada paso, si se sobrepasa algún limite se sale del bucle
+    # Si estoy en la ruta la sigo, si la termino o me pierdo, recalculo
+    # en cada paso, si se sobrepasa algún limite se sale del bucle
 
     # Si está en un camino y una acción una acción lleva a cumplir un límite, evita esa acción, a no ser que sea el target
 
