@@ -5,7 +5,7 @@ from random import random, randint
 from math import sin, cos, pi, sqrt
 from abc import ABC, abstractmethod
 from typing import Any, Optional
-from adbcontroller import ControllableDeviceAsync
+from adbcontroller import ControllableDeviceAsync, TestingDevice
 import asyncio
 import numpy as np
 from PIL import Image
@@ -335,8 +335,6 @@ def load_graph(json_path: str) -> dict[Optional[str], State]:
 
 def calculate_shortest_path(states_dict:dict[Optional[str],State], actual_state: str, target_state: str, weight_spontaneous_actions:float=5) -> list[str]:
     # Uses Dijkstra for get the shorthest distance, but returns the path
-    
-    search_alias_by_state: dict[State, str] = {v: k for k, v in states_dict.items() if k is not None}
 
     shortest: dict[str, tuple[float, Optional[str]]] = {}
     explored: set[str] = set()
@@ -355,30 +353,110 @@ def calculate_shortest_path(states_dict:dict[Optional[str],State], actual_state:
         for action, edges in states_dict[actual_node].edges_by_action.items():
             estimated += weight_spontaneous_actions if action is None else action.get_weight()
             for edge in edges:
-                name_edge = search_alias_by_state[edge]
+                name_edge = edge.alias
                 if name_edge not in shortest or shortest[name_edge][0] > estimated:
                     shortest[name_edge] = (estimated, actual_node)
             estimated -= weight_spontaneous_actions if action is None else action.get_weight()
         explored.add(actual_node)
-    route = [target_state]
 
+    route = [target_state]
     previous_node = actual_node
-    while previous_node is not None:
+    while previous_node != actual_state:
+        assert previous_node is not None
         actual_node = previous_node
-        route = [previous_node] + route
+        route.append(previous_node)
         previous_node = shortest[actual_node][1]
     return route
 
         
 
-def complete_task(device: ControllableDeviceAsync, states_dict:dict[Optional[str],State], target: tuple[str, str], limits_loop: dict[tuple[str,str],int]):
+async def complete_task(device: ControllableDeviceAsync, states_dict:dict[Optional[str],State], target: tuple[str, str], limits_loop: dict[tuple[str,str],int]):
     # target = "edge_name1" -> "edge_name2"
     # if the goal is reach the target a limited number of times, the goal_reach can be restricted in the limits
     edges_traveled: dict[tuple[str,str], int] = {}
 
     weight_spontaneous_actions = 5
 
-    initial_state = states_dict[None]
+    def in_limits(edges_traveled: dict[tuple[str,str], int], limits: dict[tuple[str,str], int]):
+        for k, v in edges_traveled.items():
+            if k in limits and v >= limits[k]:
+                return False
+        return True
+    
+    route = []
+    actual_state = states_dict[None]
+    while in_limits(edges_traveled, limits_loop):
+        possible_states: set[State] = set()
+        if actual_state.alias == target[0]:
+            for action, edges in actual_state.edges_by_action.items():
+                if states_dict[target[1]] in edges:
+                    action_selected = action
+                    possible_states = possible_states.union(edges)
+                    break
+            if isinstance(device, TestingDevice):
+                print(f"Trying to go to {target[1]}, making {action_selected}")
+        else:
+            if len(route) > 1 and route[-1] == actual_state.alias:
+                route.pop()
+            else:
+                route = calculate_shortest_path(states_dict, actual_state.alias, target[0], weight_spontaneous_actions)
+                if isinstance(device, TestingDevice):
+                    print(f"Recalculated route. New route: {route}")
+
+            for action, edges in actual_state.edges_by_action.items():
+                # print(action, edges)
+                if states_dict[route[-1]] in edges:
+                    action_selected = action
+                    possible_states = possible_states.union(edges)
+                    break
+            if isinstance(device, TestingDevice):
+                print(f"Trying to go to {route[-1]}, making {action_selected}")
+
+        if action_selected is not None:
+            await action_selected.act(device)
+        else:
+            possible_states.add(actual_state)
+        
+        checked_states:set[State] = set()
+
+        retries = 25
+        while len(checked_states) != 1 and retries != 0:
+            checked_states:set[State] = set()
+            if not isinstance(device, TestingDevice):
+                screencap = np.array(Image.open(await device.get_image()).convert("RGBA"))
+            print(possible_states)
+            for state in possible_states:
+                if isinstance(device, TestingDevice):
+                    response = await asyncio.to_thread(input, f"Should be in the state ({state.alias})? ")
+                    while response.lower() not in {"si", "s", "no", "n", "yes", "y"}:
+                        response = await asyncio.to_thread(input, f"Should be in the state ({state.alias})? ")
+                    if response.lower() not in {"no", "n"}:
+                        checked_states.add(state)
+                    # print(checked_states)
+                elif state.can_be_in_this_state(screencap):
+                    checked_states.add(state)
+            retries -= 1
+        if retries == 0:
+            raise ValueError("I don't know where I am")
+        
+        new_state = checked_states.pop()
+        if (actual_state.alias, new_state.alias) not in edges_traveled:
+            edges_traveled[(actual_state.alias, new_state.alias)] = 0
+        edges_traveled[(actual_state.alias, new_state.alias)] += 1
+        
+        actual_state = new_state
+        print(edges_traveled)
+        
+
+
+
+
+        
+        # check state
+
+        # actual_node = "None"
+        
+         
     # Primero calculo una ruta a target y la intento seguir, los tap que tengan un weigth de 1s y los none de 5s
     # Si estoy en la ruta la sigo, si la termino o me pierdo, recalculo
     # en cada paso, si se sobrepasa algún limite se sale del bucle
@@ -389,6 +467,7 @@ def complete_task(device: ControllableDeviceAsync, states_dict:dict[Optional[str
 
 if __name__ == "__main__":
     graph = load_graph("DeviceTemplate/trade_graph.json")
-    print(graph)
+    # print(graph)
     route = calculate_shortest_path(graph, "profile_selected", "trade_received")
     print(route)
+    trade_2 = asyncio.run(complete_task(TestingDevice(), graph, ("trade_received", "profile_selected"), {("trade_received", "profile_selected"): 2}))
