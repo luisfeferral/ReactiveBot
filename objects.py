@@ -9,15 +9,17 @@ from adbcontroller import ControllableDeviceAsync
 import asyncio
 import numpy as np
 from PIL import Image
+import json
+import pathlib
 
 class Mask:
     _rgb_array: np.ndarray
     _filtered_array: np.ndarray
-    _dimensions: tuple[int, ...]
+    _dimensions: tuple[int, int]
     def __init__(self, img_source) -> None:
         img = np.array(Image.open(img_source).convert("RGBA"))
         self._rgb_array = img[:, :, :3]
-        self._dimensions = self._rgb_array.shape
+        self._dimensions = self._rgb_array.shape[:2]
         self._filtered_array = img[:, :, 3] >= 128 # / 255
     def mask_match(self, img: np.ndarray) -> bool:
         img_rgb = img[:, :, :3]
@@ -56,8 +58,26 @@ class Ellipse:
 
 
 class Action(ABC):
+    registry = {}
+
+    @classmethod
+    def register(cls, action_type):
+        def decorator(subclass):
+            cls.registry[action_type] = subclass
+            return subclass
+        return decorator
+
+    @classmethod
+    def from_dict(cls, data) -> Action:
+        action_type = data["type"]
+        subclass = cls.registry[action_type]
+        return subclass.from_dict(data)
+    
     @abstractmethod
     def __str__(self) -> str: ...
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
     @abstractmethod
     async def act(self, device: ControllableDeviceAsync) -> None: ...
@@ -83,10 +103,17 @@ class Action(ABC):
         return str(self) == str(other)
 
 
+@Action.register("macro")
 class MacroAction(Action):
     actions: list[Action]
     def __init__(self, actions: list[Action]) -> None:
         self.actions = actions
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]):
+        actions = data["actions"]
+        return cls(
+            list(Action.from_dict(a) for a in actions)
+        )
     def get_weight(self) -> float:
         return sum(action.get_weight() for action in self.actions)
     def __str__(self):
@@ -98,9 +125,13 @@ class MacroAction(Action):
         return self.actions
 
 
+@Action.register("wait")
 class WaitAction(Action):
     time_ms: int
     time_s: float
+    @classmethod
+    def from_dict(cls, data):
+        return cls(**data)
     def __init__(self, time_ms: int) -> None:
         self.time_ms = time_ms
         self.time_s = time_ms / 1000
@@ -112,12 +143,24 @@ class WaitAction(Action):
         await asyncio.sleep(self.time_s)
 
 
+@Action.register("tap_ellipse")
 class TapEllipseAction(Action):
     ellipse: Ellipse
     weight: float
     def __init__(self, ellipse_to_tap: Ellipse, weight:float=1) -> None:
         self.ellipse = ellipse_to_tap
         self.weight = weight
+    @classmethod
+    def from_dict(cls, data):
+        e = data["ellipse"]
+        kwargs = {}
+        if "weight" in data:
+            kwargs["weight"] = data["weight"]
+
+        return cls(
+            Ellipse(e["x"], e["y"], e["w"], e["h"]),
+            **kwargs
+        )
     def get_weight(self) -> float:
         return self.weight
     def __str__(self):
@@ -126,6 +169,7 @@ class TapEllipseAction(Action):
         await device.send_tap(*self.ellipse.get_random_point(), randint(100, 150))
 
 
+@Action.register("tap")
 class TapAction(Action):
     position: tuple[int, int]
     time_ms: int
@@ -134,6 +178,19 @@ class TapAction(Action):
         self.position = position_x, position_y
         self.time_ms = time_ms
         self.weight = weight
+    @classmethod
+    def from_dict(cls, data):
+        pos = data["position"]
+        t = data["time_ms"]
+        kwargs = {}
+        if "weight" in data:
+            kwargs["weight"] = data["weight"]
+
+        return cls(
+            pos["x"], pos["y"],
+            t,
+            **kwargs
+        )
     def get_weight(self) -> float:
         return self.weight
     def __str__(self):
@@ -141,6 +198,8 @@ class TapAction(Action):
     async def act(self, device: ControllableDeviceAsync) -> None:
         await device.send_tap(*self.position, self.time_ms)
 
+
+@Action.register("button")
 class ButtonAction(Action):
     key_code: int
     key_alias: Optional[str]
@@ -149,6 +208,11 @@ class ButtonAction(Action):
         self.key_code = key_code
         self.key_alias = key_alias
         self.weight = weight
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            **data
+        )
     def get_weight(self) -> float:
         return self.weight
     def __str__(self):
@@ -159,22 +223,7 @@ class ButtonAction(Action):
         return f"[button] key: {self.key_alias}; key_code: {self.key_code}"
     async def act(self, device: ControllableDeviceAsync) -> None:
         await device.send_key(self.key_code)
-        
 
-# class PreState:
-#     masks: list[png]
-#     edges_by_action: dict[Action, str]
-#     spontaneous_states: set[str]
-#     def __init__(self, masks_strings: list[str], edges: dict[Action, str], spontaneous_states_list: list[str], resolution:tuple[int,int]) -> None:
-#         masks = []
-#         for m in masks_strings:
-#             if m is None:
-#                 raise ValueError
-#             if resolution:
-#                 raise ValueError
-#             masks.append(m)
-#         edges_by_action = edges
-#         spontaneous_states = set(spontaneous_states_list)
 
 class State:
     alias: str
@@ -202,9 +251,30 @@ states_builder = dict[str,
                     tuple[list[str],
                           dict[Optional[Action], list[str]]]]
 
-def load_graph(file: str) -> dict[Optional[str], State]:
+def load_graph(json_path: str) -> dict[Optional[str], State]:
     # load states from the file
     states:states_builder = {}
+
+    path = pathlib.Path(json_path).parent
+
+    with open(json_path) as f:
+        data = json.load(f)
+
+    states = {}
+
+    for state_id, state_data in data["states"].items():
+        masks = state_data["masks"]
+        transitions = {}
+
+        for t in state_data["transitions"]:
+            if t["action"] is None:
+                transitions[None] = t["next_states"]
+            else:
+                action = Action.from_dict(t["action"])
+                transitions[action] = t["next_states"]
+
+        states[state_id] = (masks, transitions)
+
 
     nodes:dict[Optional[str], State] = {}
     # 1. Crear nodos
@@ -215,7 +285,7 @@ def load_graph(file: str) -> dict[Optional[str], State]:
             pass
         nodes[reference] = State(
             reference,
-            [Mask(m) for m in masks] if masks else None
+            [Mask(str(path/m)) for m in masks] if masks else None
         ) # cuidado porque lo lógico sería que las rutas de las máscaras sean relativas a su archivo
 
     # 2. Conectar
@@ -289,12 +359,13 @@ def calculate_shortest_path(states_dict:dict[Optional[str],State], actual_state:
                 if name_edge not in shortest or shortest[name_edge][0] > estimated:
                     shortest[name_edge] = (estimated, actual_node)
             estimated -= weight_spontaneous_actions if action is None else action.get_weight()
-        explored.add(actual_state)
-    route = [actual_node, target_state]
+        explored.add(actual_node)
+    route = [target_state]
 
+    previous_node = actual_node
     while previous_node is not None:
         actual_node = previous_node
-        route = [previous_node] + [route]
+        route = [previous_node] + route
         previous_node = shortest[actual_node][1]
     return route
 
@@ -316,3 +387,8 @@ def complete_task(device: ControllableDeviceAsync, states_dict:dict[Optional[str
 
     # Por ejemplo, si está limitado a hacer un especial (cuando haya más disponibles), pues ese trade de debería aceptarlo, pero tampoco haría falta que se bloquease, con que espere a que el otro lo cambie sería suficiente
 
+if __name__ == "__main__":
+    graph = load_graph("DeviceTemplate/trade_graph.json")
+    print(graph)
+    route = calculate_shortest_path(graph, "profile_selected", "trade_received")
+    print(route)
