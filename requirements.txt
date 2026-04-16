@@ -1,9 +1,9 @@
-## Dependencias actuales del proyecto
+## Actual dependencies of the project
 pure-python-adb==0.3.0.dev0
 aiofiles==23.1.0
 PyYAML==6.0.3
-numpy~=2.4.3    # acepta 2.4.x (p.ej. 2.4.4), no 2.5.0
-Pillow~=12.1.1  # acepta 12.1.x, no 12.2.0
-# cuando se vayan acercando las versiones, en las que sé que funciona, acoto
+numpy~=2.4.3    # admits 2.4.x
+Pillow~=12.1.1  # admits 12.1.x
+# The dependencies will be upper bounded when it can be proven
 # numpy>=2.4.3,<3.0 
 # Pillow>=12.1.1,<13.0

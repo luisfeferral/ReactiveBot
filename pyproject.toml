@@ -1,0 +1,14 @@
+[project]
+name = "reactive-bot"
+version = "1.0.0"
+requires-python = ">=3.12" # The project uses the generic vanilla included from this version
+
+dependencies = [
+    "pure-python-adb==0.3.0.dev0",
+    "aiofiles==23.1.0",
+    "PyYAML==6.0.3",
+    "numpy~=2.4.3",
+    "Pillow~=12.1.1"
+# The dependencies will be upper bounded when it can be proven
+# numpy>=2.4.3,<3.0 
+# Pillow>=12.1.1,<13.0

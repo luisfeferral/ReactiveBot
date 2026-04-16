@@ -1,0 +1,319 @@
+{
+  "initial_state": "friend_selected",
+  "states": {
+    "friend_selected": {
+      "masks": ["profile_blue_lvl4_tag.png", "profile_red_lvl4_tag.png", "profile_yellow_lvl4_tag.png", "profile_yellow_lvl5_tag_temp.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 540, "y": 1870, "w": 130, "h": 80 }
+          },
+          "next_states": ["friend_selected", "waiting_other_enters", "selecting_specific_tag_for_trade", "trade_expired_name", "trade_expired_generic"]
+        }
+      ]
+    },
+    "lucky_friend_selected": {
+      "masks": ["profile_blue_lucky_lvl4_no_tag.png", "profile_blue_lucky_lvl4_tag.png", "profile_red_lucky_lvl4_no_tag.png", "profile_red_lucky_lvl4_tag.png", "profile_yellow_lucky_lvl4_no_tag.png", "profile_yellow_lucky_lvl4_tag.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 540, "y": 1870, "w": 130, "h": 80 }
+          },
+          "next_states": ["lucky_friend_selected", "waiting_other_enters", "selecting_specific_tag_for_trade", "trade_expired_name", "trade_expired_generic"]
+        }
+      ]
+    },
+    "out_of_range": {
+      "masks": ["out_of_range.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 540, "y": 1244, "w": 300, "h": 70 }
+          },
+          "next_states": ["friend_selected", "lucky_friend_selected"]
+        }
+      ]
+    },
+    "trade_limit_reached": {
+      "masks": ["limit_reached.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 540, "y": 1280, "w": 300, "h": 72 }
+          },
+          "next_states": ["friend_selected", "lucky_friend_selected"]
+        }
+      ]
+    },
+    "waiting_other_enters": {
+      "masks": ["waiting_other_enters.png"],
+      "transitions": [
+        {
+          "action": null,
+          "next_states": ["selecting_specific_tag_for_trade", "selecting_but_theres_no_search_term", "trade_expired_name", "trade_expired_generic"]
+        }
+      ]
+    },
+    "selecting_but_theres_no_search_term": {
+      "masks": ["no_term.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "macro",
+            "actions": [
+              {
+                "type": "tap_ellipse",
+                "ellipse": { "x": 540, "y": 350, "w": 494, "h": 58 }
+              },
+              {
+                "type": "wait",
+                "time_ms": 500
+              },
+              {
+                "type": "send_text",
+                "text": "#relleno"
+              },
+              {
+                "type": "wait",
+                "time_ms": 500
+              },
+              {
+                "type": "button",
+                "key_code": 66,
+                "key_alias": "Enter"
+              }
+            ]
+          },
+          "next_states": ["selecting_specific_tag_for_trade", "trade_expired_name", "trade_expired_generic"]
+        }
+      ]
+    },
+    "selecting_specific_tag_for_trade": {
+      "masks": ["selecting_specific_tag_for_trade.png", "selecting_specific_tag_for_trade_1.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 191, "y": 706, "w": 75, "h": 94 }
+          },
+          "next_states": ["selecting_specific_tag_for_trade", "first_confirm", "favorite"]
+        },
+        {
+          "action": null,
+          "next_states": ["trade_expired_name", "trade_expired_generic"]
+        }
+      ]
+    },
+    "favorite": {
+      "masks": ["favorite.png"],
+      "transitions": []
+    },
+    "first_confirm": {
+      "masks": ["first_confirm.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 540, "y": 1906, "w": 300, "h": 70 }
+          },
+          "next_states": ["waiting_other_selects", "dinamax_confirm", "confirm_regular_trade"]
+        },
+        {
+          "action": null,
+          "next_states": ["trade_expired_name", "trade_expired_generic"]
+        }
+      ]
+    },
+    "dinamax_confirm": {
+      "masks": ["dinamax_confirm.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 540, "y": 1372, "w": 280, "h": 70 }
+          },
+          "next_states": ["waiting_other_selects", "confirm_regular_trade", "special_trade", "special_register_trade"]
+        },
+        {
+          "action": null,
+          "next_states": ["trade_expired_name", "trade_expired_generic"]
+        }
+      ]
+    },
+    "confirm_regular_trade": {
+      "masks": ["confirm_regular_trade.png", "confirm_regular_trade_discount.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "macro",
+            "actions": [
+              {
+                "type": "tap_ellipse",
+                "ellipse": { "x": 200, "y": 1174, "w": 200, "h": 74 }
+              },
+              {
+                "type": "wait",
+                "time_ms": 500
+              }
+            ]
+          },
+          "next_states": ["background_confirm", "special_background_confirm", "special_confirm", "waiting_other_confirms", "trade_received", "new_record"]
+        },
+        {
+          "action": null,
+          "next_states": ["trade_expired_name", "trade_expired_generic", "confirm_regular_trade", "special_trade", "special_register_trade"]
+        }
+      ]
+    },
+    "special_trade": {
+      "masks": ["special_trade.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 200, "y": 1174, "w": 200, "h": 74 }
+          },
+          "next_states": ["background_confirm", "special_background_confirm", "special_confirm"]
+        },
+        {
+          "action": null,
+          "next_states": ["trade_expired_name", "trade_expired_generic", "confirm_regular_trade", "special_trade", "special_register_trade"]
+        }
+      ]
+    },
+    "special_confirm": {
+      "masks": ["special_confirm.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 200, "y": 1174, "w": 200, "h": 74 }
+          },
+          "next_states": ["waiting_other_confirms", "trade_received", "new_record"]
+        },
+        {
+          "action": null,
+          "next_states": ["trade_expired_name", "trade_expired_generic", "confirm_regular_trade", "special_trade", "special_register_trade"]
+        }
+      ]
+    },
+    "background_confirm": {
+      "masks": ["background_confirm.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 200, "y": 1174, "w": 200, "h": 74 }
+          },
+          "next_states": ["waiting_other_confirms", "trade_received", "new_record"]
+        },
+        {
+          "action": null,
+          "next_states": ["trade_expired_name", "trade_expired_generic", "confirm_regular_trade", "special_trade", "special_register_trade"]
+        }
+      ]
+    },
+    "special_background_confirm": {
+      "masks": ["special_background_confirm.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 200, "y": 1174, "w": 200, "h": 74 }
+          },
+          "next_states": ["waiting_other_confirms", "trade_received", "new_record"]
+        },
+        {
+          "action": null,
+          "next_states": ["trade_expired_name", "trade_expired_generic", "confirm_regular_trade", "special_trade", "special_register_trade"]
+        }
+      ]
+    },
+    "special_register_trade": {
+      "masks": ["special_register_trade.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 200, "y": 1174, "w": 200, "h": 74 }
+          },
+          "next_states": ["dinamax_confirm", "background_confirm", "special_background_confirm", "special_confirm", "waiting_other_confirms", "trade_received", "new_record"]
+        },
+        {
+          "action": null,
+          "next_states": ["trade_expired_name", "trade_expired_generic", "confirm_regular_trade", "special_trade", "special_register_trade"]
+        }
+      ]
+    },
+    "waiting_other_selects": {
+      "masks": ["waiting_other_selects.png"],
+      "transitions": [
+        {
+          "action": null,
+          "next_states": ["trade_expired_name", "trade_expired_generic", "confirm_regular_trade", "special_trade", "special_register_trade"]
+        }
+      ]
+    },
+    "waiting_other_confirms": {
+      "masks": ["waiting_other_confirms.png", "waiting_other_confirms_discount.png"],
+      "transitions": [
+        {
+          "action": null,
+          "next_states": ["confirm_regular_trade", "trade_expired_name", "trade_expired_generic", "trade_received", "new_record", "special_trade", "special_register_trade"]
+        }
+      ]
+    },
+    "new_record": {
+      "masks": ["new_record.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 540, "y": 2131, "w": 50, "h": 50 }
+          },
+          "next_states": ["trade_received"]
+        }
+      ]
+    },
+    "trade_received": {
+      "masks": ["trade_lucky_received_female_high_hp.png", "trade_lucky_received_female_low_hp.png", "trade_lucky_received_male_high_hp.png", "trade_lucky_received_male_low_hp.png", "trade_lucky_received_ng_high_hp.png", "trade_lucky_received_ng_low_hp.png", "trade_received_female_high_hp.png", "trade_received_female_low_hp.png", "trade_received_male_high_hp.png", "trade_received_male_low_hp.png", "trade_received_ng_high_hp.png", "trade_received_ng_low_hp.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 540, "y": 2131, "w": 50, "h": 50 }
+          },
+          "next_states": ["friend_selected", "lucky_friend_selected"]
+        }
+      ]
+    },
+    "trade_expired_generic": {
+      "masks": ["trade_expired_generic.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 540, "y": 1280, "w": 280, "h": 70 }
+          },
+          "next_states": ["friend_selected", "lucky_friend_selected"]
+        }
+      ]
+    },
+    "trade_expired_name": {
+      "masks": ["trade_expired_name.png"],
+      "transitions": [
+        {
+          "action": {
+            "type": "tap_ellipse",
+            "ellipse": { "x": 540, "y": 1245, "w": 280, "h": 70 }
+          },
+          "next_states": ["friend_selected", "lucky_friend_selected"]
+        }
+      ]
+    }
+  }
+}

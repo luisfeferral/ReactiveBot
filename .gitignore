@@ -4,6 +4,9 @@
 /*.json
 /*.png
 *.yaml
-test.py
+test*.py
+graph.mmd
+graph_previewer.py
 
 !DeviceTemplate/
+!DeviceTemplate/*/
