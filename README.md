@@ -36,7 +36,47 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-The example is intentionally a starting point — inspect `pokemon_go_example.py` to see how the core (`objects.py`) and the ADB adapter (`adbcontroller.py` / `adb_actions.py`) are used together.
+The example is intentionally a starting point — inspect `pokemon_go_example.py` to see how the core (`objects.py`) and the ADB adapter (`adb_controller.py` / `adb_actions.py`) are used together.
+
+## Setting up ADB and connecting an Android device
+
+### Install platform-tools (ADB)
+
+- Download the Android platform tools (which include `adb`) from the official source: https://developer.android.com/studio/releases/platform-tools
+- Unpack the downloaded archive. You can either add the extracted `platform-tools` directory to your system `PATH` (so `adb` is available from any folder) or run `adb` from inside that directory.
+- To confirm `adb` is available, open a command prompt and run:
+
+```cmd
+adb --version
+```
+
+If the command prints a version, `adb` is installed correctly.
+
+### Connect an Android device
+
+Follow these steps to enable a device for ADB access and verify the connection.
+
+1. Enable Developer options on the device:
+	- Open Settings, go to About phone (or About device) and find the Build number or Software information.
+	- Tap Build number repeatedly (usually 7 times) until the device enables Developer options.
+
+2. Enable USB debugging:
+	- Open Settings → Developer options and enable USB debugging.
+
+3. Connect the device to your computer:
+	- Use a USB cable to connect the phone.
+	- If a prompt appears on the device asking to allow USB debugging from this computer, accept (you may also choose to always allow).
+
+4. Verify the connection from your PC:
+
+```cmd
+adb devices
+```
+
+You should see your device serial number listed with the status `device`. If the status is `unauthorized`, accept the debugging prompt on the phone. If no device is listed, ensure the cable is data-capable and that any required OEM drivers are installed (Windows may require a driver for some devices).
+
+Optional: ADB supports connection through Wi-Fi, the configuration depends on every device but the device and the ADB must be in the same network and your device tells an IP adress and port to connect (sometimes the port must be opened manually with `adb tcpip <port>`) and then you can use `adb connect <ip-adress>:<port>`. This configuration usually expires when the device disconnects from the Wi-Fi used.
+
 
 ## How to use the project
 
