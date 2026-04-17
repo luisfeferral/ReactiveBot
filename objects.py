@@ -327,8 +327,19 @@ def load_graph[DeviceType:CapturableDevice](json_path: str) -> dict[Optional[str
                 for edge in edges:
                     if edge not in nodes_visited:
                         nodes_to_visit.add(edge)
-    nodes[None] = nodes[next(iter(states.keys()))] # Initial state
-    return nodes
+    # Initial states
+    if "initial_state" in data:
+        pass
+    elif "initial_states" in data:
+        if data["initial_states"]:
+            pass
+        elif data["initial_states"]:
+            pass
+        else:
+            raise NotImplementedError("Initial states bad defined")
+    else:
+        raise NotImplementedError("Initial state(s) must be defined")
+    return nodes, initial_states
 
 def calculate_shortest_path(states_dict:dict[Optional[str],State], actual_state: str, target_state: str, weight_spontaneous_actions:float=5) -> list[str]:
     '''Returns the shortest path to the target, it uses Dijkstra'''
@@ -356,9 +367,10 @@ def calculate_shortest_path(states_dict:dict[Optional[str],State], actual_state:
         explored.add(actual_node)
 
     route = [target_state]
+    if actual_node is None:
+        return route
     previous_node = actual_node
     while previous_node != actual_state:
-        assert previous_node is not None
         actual_node = previous_node
         route.append(previous_node)
         previous_node = shortest[actual_node][1]
@@ -370,7 +382,7 @@ class UnknownState(Exception):
 
 
 
-async def complete_task[DeviceType:CapturableDevice](*, device: DeviceType, states_dict:dict[Optional[str],State[DeviceType]], target: tuple[str, str], limits_loop: dict[tuple[str,str],int], training_wheels_protocol=False):
+async def complete_task[DeviceType:CapturableDevice](*, device: DeviceType, initial_states:State[DeviceType]|set[State[DeviceType]], states_dict:dict[Optional[str],State[DeviceType]], target: tuple[str, str], limits_loop: dict[tuple[str,str],int], training_wheels_protocol=False, mask_retries:int=100):
     '''target = "edge_name1" -> "edge_name2", 
     if the goal is to reach the target a limited number of times, the times can be restricted in the limits.
     Returns actual_state, last_state to be able to connect different graphs'''
@@ -394,9 +406,31 @@ async def complete_task[DeviceType:CapturableDevice](*, device: DeviceType, stat
         return True
     
     route = []
-    actual_state:State[DeviceType] = states_dict[None]
-    if not actual_state.is_obvious_state() and not actual_state.can_be_in_this_state(np.array(Image.open(await device.get_image()).convert("RGBA"))):
-        raise UnknownState("I'm not where I'm supposed to start")
+    if isinstance(initial_states, State):
+        actual_state:State[DeviceType] = states_dict[None]
+        if not actual_state.is_obvious_state() and not actual_state.can_be_in_this_state(np.array(Image.open(await device.get_image()).convert("RGBA"))):
+            raise UnknownState("I'm not where I'm supposed to start")
+    elif isinstance(initial_states, set):
+        retries = mask_retries
+        checked_states = set()
+        while len(checked_states) != 1 and retries != 0:
+            checked_states:set[State[DeviceType]] = set()
+            if not isinstance(device, TestingDevice):
+                screencap = np.array(Image.open(await device.get_image()).convert("RGBA"))
+            logger.debug(f"Possible initial states: {initial_states}")
+            for state in initial_states:
+                if isinstance(device, TestingDevice):
+                    response = await asyncio.to_thread(input, f"Should be in the state ({state.alias})? ")
+                    while response.lower() not in {"si", "s", "no", "n", "yes", "y"}:
+                        response = await asyncio.to_thread(input, f"Should be in the state ({state.alias})? ")
+                    if response.lower() not in {"no", "n"}:
+                        checked_states.add(state)
+                elif state.can_be_in_this_state(screencap):
+                    checked_states.add(state)
+            retries -= 1
+        actual_state:State[DeviceType] = checked_states.pop()
+    else:
+        raise NotImplementedError("Initial states must be a State or a set of States")
     last_state:Optional[State[DeviceType]] = None
     while True:
         if not in_limits(edges_traveled, limits_loop):
@@ -452,7 +486,7 @@ async def complete_task[DeviceType:CapturableDevice](*, device: DeviceType, stat
         
         checked_states:set[State[DeviceType]] = set()
 
-        retries = 100
+        retries = mask_retries
         time.sleep(.15) # This pause it is relevant when the animations are a little bit slow, because the robot could think that it won't change state
         while len(checked_states) != 1 and retries != 0:
             try:
